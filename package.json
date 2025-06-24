@@ -1,20 +1,27 @@
 {
-  "name": "CollaborativeDoc",
+  "name": "collaborative-doc",
+  "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev",
-    "lint": "turbo run lint",
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types"
+    "prepare": "husky"
   },
   "devDependencies": {
-    "prettier": "^3.6.0",
-    "turbo": "^2.5.4",
-    "typescript": "5.8.2"
+    "@commitlint/cli": "^18.6.1",
+    "@commitlint/config-conventional": "^18.6.2",
+    "husky": "^9.0.11",
+    "prettier": "^3.2.5",
+    "turbo": "latest"
   },
-  "packageManager": "pnpm@9.0.0",
   "engines": {
-    "node": ">=18"
-  }
-}
+    "node": ">=18.0.0"
+  },
+  "packageManager": "pnpm@8.12.0"
+} 
