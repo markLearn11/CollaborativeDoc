@@ -31,6 +31,7 @@ export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
   const ydocRef = useRef<Y.Doc>(new Y.Doc());
   const providerRef = useRef<WebsocketProvider | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [activeUsers, setActiveUsers] = useState<Array<{name: string, color: string}>>([]);
 
   useEffect(() => {
     // 清理之前的provider
@@ -49,6 +50,23 @@ export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
     websocketProvider.awareness.setLocalStateField('user', {
       name: username,
       color: userColor,
+    });
+
+    // 监听其他用户的状态变化
+    websocketProvider.awareness.on('change', () => {
+      const states = websocketProvider.awareness.getStates();
+      const users: Array<{name: string, color: string}> = [];
+      
+      states.forEach((state: any) => {
+        if (state.user) {
+          users.push({
+            name: state.user.name,
+            color: state.user.color,
+          });
+        }
+      });
+      
+      setActiveUsers(users);
     });
 
     // 使用ref存储provider，而不是state
@@ -95,30 +113,181 @@ export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
 
   // 如果还未连接，显示加载状态
   if (!isConnected) {
-    return <div>正在连接到协作服务器...</div>;
+    return (
+      <div className="loading-container" style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '200px',
+        flexDirection: 'column',
+        gap: '1rem'
+      }}>
+        <div className="spinner" style={{
+          width: '40px',
+          height: '40px',
+          border: '3px solid rgba(0, 0, 0, 0.1)',
+          borderRadius: '50%',
+          borderTopColor: '#3182ce',
+          animation: 'spin 0.8s linear infinite'
+        }}></div>
+        <p style={{ 
+          color: '#4a5568',
+          fontSize: '0.9rem' 
+        }}>正在连接到协作服务器...</p>
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}} />
+      </div>
+    );
   }
 
   return (
-    <div className="collaborative-editor">
-      <div className="editor-header">
-        <div className="document-id">文档ID: {documentId}</div>
-        <div className="user-info">
-          <span className="username">{username}</span>
-          <span
-            className="user-color"
-            style={{
-              display: 'inline-block',
-              width: '12px',
-              height: '12px',
-              borderRadius: '50%',
-              backgroundColor: userColor,
-              marginLeft: '5px',
-            }}
-          ></span>
+    <div className="collaborative-editor" style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '1rem',
+      height: '100%',
+      width: '100%',
+    }}>
+      <div className="editor-header" style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '1rem',
+        backgroundColor: '#f7fafc',
+        borderRadius: '8px',
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+        border: '1px solid #e2e8f0',
+      }}>
+        <div className="document-info" style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#4a5568' }}>
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <span style={{ fontWeight: 500, color: '#2d3748' }}>文档ID: </span>
+          <span style={{ 
+            backgroundColor: '#ebf8ff', 
+            padding: '0.2rem 0.5rem', 
+            borderRadius: '4px',
+            fontSize: '0.9rem',
+            color: '#2c5282',
+            fontFamily: 'monospace'
+          }}>{documentId}</span>
+        </div>
+        
+        <div className="active-users" style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}>
+          <span style={{ fontSize: '0.9rem', color: '#718096' }}>在线用户:</span>
+          <div style={{ display: 'flex', marginLeft: '0.5rem' }}>
+            {activeUsers.map((user, index) => (
+              <div 
+                key={index} 
+                style={{ 
+                  position: 'relative',
+                  marginLeft: index > 0 ? '-8px' : '0',
+                  zIndex: activeUsers.length - index,
+                }}
+                title={user.name}
+              >
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  backgroundColor: user.color,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fff',
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                  border: '2px solid #fff',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                }}>
+                  {user.name.charAt(0).toUpperCase()}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
-      <div className="editor-content">
+      
+      <div className="editor-toolbar" style={{
+        display: 'flex',
+        gap: '0.25rem',
+        padding: '0.5rem 0.75rem',
+        backgroundColor: '#f7fafc',
+        borderRadius: '8px 8px 0 0',
+        borderTop: '1px solid #e2e8f0',
+        borderLeft: '1px solid #e2e8f0',
+        borderRight: '1px solid #e2e8f0',
+      }}>
+        <button 
+          onClick={() => editor?.chain().focus().toggleBold().run()} 
+          className={editor?.isActive('bold') ? 'is-active' : ''}
+          style={{
+            padding: '0.3rem 0.6rem',
+            borderRadius: '4px',
+            border: 'none',
+            background: editor?.isActive('bold') ? '#e2e8f0' : 'transparent',
+            cursor: 'pointer',
+            color: '#4a5568',
+            fontWeight: editor?.isActive('bold') ? 'bold' : 'normal',
+          }}
+        >
+          B
+        </button>
+        <button 
+          onClick={() => editor?.chain().focus().toggleItalic().run()} 
+          className={editor?.isActive('italic') ? 'is-active' : ''}
+          style={{
+            padding: '0.3rem 0.6rem',
+            borderRadius: '4px',
+            border: 'none',
+            background: editor?.isActive('italic') ? '#e2e8f0' : 'transparent',
+            cursor: 'pointer',
+            color: '#4a5568',
+            fontStyle: editor?.isActive('italic') ? 'italic' : 'normal',
+          }}
+        >
+          I
+        </button>
+      </div>
+      
+      <div className="editor-content" style={{
+        flexGrow: 1,
+        border: '1px solid #e2e8f0',
+        borderRadius: '0 0 8px 8px',
+        overflow: 'hidden',
+      }}>
         <EditorContent editor={editor} />
+      </div>
+      
+      <div className="editor-footer" style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        padding: '0.75rem',
+        fontSize: '0.85rem',
+        color: '#718096',
+        borderTop: '1px solid #e2e8f0',
+      }}>
+        <div>
+          已连接 · 由 {username} 编辑中
+        </div>
+        <div>
+          实时协作中
+        </div>
       </div>
     </div>
   );
