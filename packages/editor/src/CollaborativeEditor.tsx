@@ -2,31 +2,53 @@
  * @Author: jihao00122 52628008+jihao00122@users.noreply.github.com
  * @Date: 2025-06-24 21:38:41
  * @LastEditors: jihao00122 52628008+jihao00122@users.noreply.github.com
- * @LastEditTime: 2025-06-24 22:10:30
+ * @LastEditTime: 2025-06-25 12:07:18
  * @FilePath: /CollaborativeDoc/packages/editor/src/CollaborativeEditor.tsx
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
-import React, { useEffect, useRef, useState } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 
+// 导出编辑器引用接口类型
+export interface CollaborativeEditorRef {
+  getEditor: () => Editor | null;
+}
+
+// 注释掉这些类型声明，因为它们没有正确应用
+// declare module '@tiptap/react' {
+//   interface Commands<ReturnType> {
+//     toggleBold: () => ReturnType;
+//     toggleItalic: () => ReturnType;
+//     toggleStrike: () => ReturnType;
+//     toggleUnderline: () => ReturnType;
+//     toggleHeading: (attrs: { level: number }) => ReturnType;
+//     toggleBulletList: () => ReturnType;
+//     toggleOrderedList: () => ReturnType;
+//     toggleBlockquote: () => ReturnType;
+//     toggleCodeBlock: () => ReturnType;
+//   }
+// }
+
 interface CollaborativeEditorProps {
   documentId: string;
   username: string;
   userColor?: string;
   websocketUrl?: string;
+  onActiveUsersChange?: (users: Array<{name: string, color: string}>) => void;
 }
 
-export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
+export const CollaborativeEditor = forwardRef<CollaborativeEditorRef, CollaborativeEditorProps>(({
   documentId,
   username,
   userColor = '#' + Math.floor(Math.random() * 16777215).toString(16), // 随机颜色
   websocketUrl = 'ws://localhost:1234',
-}) => {
+  onActiveUsersChange,
+}, ref) => {
   // 使用useRef保存ydoc和provider，避免重新渲染时重新创建
   const ydocRef = useRef<Y.Doc>(new Y.Doc());
   const providerRef = useRef<WebsocketProvider | null>(null);
@@ -67,6 +89,11 @@ export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
       });
       
       setActiveUsers(users);
+      
+      // 如果提供了回调函数，则通知父组件活跃用户状态更改
+      if (onActiveUsersChange) {
+        onActiveUsersChange(users);
+      }
     });
 
     // 使用ref存储provider，而不是state
@@ -80,7 +107,7 @@ export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
       providerRef.current = null;
       setIsConnected(false);
     };
-  }, [documentId, username, userColor, websocketUrl]);
+  }, [documentId, username, userColor, websocketUrl, onActiveUsersChange]);
 
   const editor = useEditor(
     {
@@ -104,12 +131,166 @@ export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
       ],
       editorProps: {
         attributes: {
-          class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl mx-auto focus:outline-none',
+          class: 'editor-content focus:outline-none',
         },
       },
     },
     [isConnected] // 只依赖连接状态，而不是provider对象本身
   );
+
+  // 暴露编辑器实例到父组件
+  useImperativeHandle(ref, () => ({
+    getEditor: () => editor,
+  }));
+
+  // 自定义CSS，使用项目变量
+  const editorStyles = `
+    .editor-content {
+      height: 100%;
+      width: 100%;
+      padding: var(--editor-padding, 2rem);
+      background: var(--bg-color-card, #fff);
+      color: var(--text-color, #1a202c);
+      border-radius: var(--border-radius, 12px);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: var(--editor-line-height, 1.7);
+      transition: var(--transition, all 0.2s ease-in-out);
+      min-height: 300px;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+    
+    .editor-content:focus {
+      outline: none;
+      background: var(--bg-color-card, #fff);
+    }
+    
+    .editor-content h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: var(--text-color, #1a202c);
+      border-bottom: 1px solid var(--border-color, rgba(229, 231, 235, 0.8));
+      padding-bottom: 0.5rem;
+    }
+    
+    .editor-content h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: var(--text-color, #1a202c);
+    }
+    
+    .editor-content h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text-color, #1a202c);
+    }
+    
+    .editor-content p {
+      margin-bottom: 1rem;
+    }
+    
+    .editor-content ul, .editor-content ol {
+      margin-left: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    
+    .editor-content li {
+      margin-bottom: 0.25rem;
+    }
+    
+    .editor-content blockquote {
+      border-left: 3px solid var(--primary-color, #3182ce);
+      padding-left: 1rem;
+      margin-left: 0;
+      color: var(--text-color-light, #718096);
+      font-style: italic;
+      margin: 1rem 0;
+      background: rgba(var(--primary-rgb, 49, 130, 206), 0.05);
+      padding: 0.5rem 1rem;
+      border-radius: 0 var(--border-radius-sm, 6px) var(--border-radius-sm, 6px) 0;
+    }
+    
+    .editor-content code {
+      background-color: var(--bg-color-light, #edf2f7);
+      padding: 0.2em 0.4em;
+      border-radius: var(--border-radius-sm, 6px);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.9em;
+    }
+    
+    .editor-content pre {
+      background-color: var(--bg-color-light, #edf2f7);
+      padding: 1rem;
+      border-radius: var(--border-radius-sm, 6px);
+      overflow-x: auto;
+      margin-bottom: 1rem;
+    }
+    
+    .editor-content pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+    
+    .editor-content a {
+      color: var(--primary-color, #3182ce);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    
+    .editor-content a:hover {
+      color: var(--primary-color-dark, #2c5282);
+    }
+    
+    .ProseMirror {
+      outline: none;
+    }
+    
+    .ProseMirror p.is-editor-empty:first-child::before {
+      color: var(--text-color-lighter, #a0aec0);
+      content: attr(data-placeholder);
+      float: left;
+      height: 0;
+      pointer-events: none;
+    }
+    
+    @media (prefers-color-scheme: dark) {
+      .editor-content {
+        background: var(--bg-color-card, #2d3748);
+        color: var(--text-color-dark, #f7fafc);
+        box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+      }
+      
+      .editor-content:focus {
+        background: var(--bg-color-card, #2d3748);
+      }
+      
+      .editor-content code {
+        background-color: var(--bg-color-dark, #1a202c);
+      }
+      
+      .editor-content pre {
+        background-color: var(--bg-color-dark, #1a202c);
+      }
+      
+      .editor-content h1, .editor-content h2, .editor-content h3 {
+        color: var(--text-color-dark, #f7fafc);
+      }
+      
+      .editor-content h1 {
+        border-color: var(--border-color-dark, #4a5568);
+      }
+      
+      .editor-content blockquote {
+        background: rgba(var(--primary-rgb, 49, 130, 206), 0.1);
+      }
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  `;
 
   // 如果还未连接，显示加载状态
   if (!isConnected) {
@@ -118,27 +299,27 @@ export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
         display: 'flex', 
         justifyContent: 'center', 
         alignItems: 'center', 
-        height: '200px',
+        height: '100%',
         flexDirection: 'column',
-        gap: '1rem'
+        gap: '1rem',
+        backgroundColor: 'var(--bg-color-card, #fff)',
+        borderRadius: 'var(--border-radius, 12px)',
+        padding: '2rem',
+        boxShadow: 'var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06))',
       }}>
         <div className="spinner" style={{
           width: '40px',
           height: '40px',
           border: '3px solid rgba(0, 0, 0, 0.1)',
           borderRadius: '50%',
-          borderTopColor: '#3182ce',
+          borderTopColor: 'var(--primary-color, #3182ce)',
           animation: 'spin 0.8s linear infinite'
         }}></div>
         <p style={{ 
-          color: '#4a5568',
-          fontSize: '0.9rem' 
+          color: 'var(--text-color-light, #718096)',
+          fontSize: '0.9rem',
+          fontWeight: '500'
         }}>正在连接到协作服务器...</p>
-        <style dangerouslySetInnerHTML={{__html: `
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        `}} />
       </div>
     );
   }
@@ -147,150 +328,20 @@ export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
     <div className="collaborative-editor" style={{
       display: 'flex',
       flexDirection: 'column',
-      gap: '1rem',
       height: '100%',
       width: '100%',
+      borderRadius: 'var(--border-radius, 12px)',
+      boxShadow: 'var(--shadow-lg, 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04))',
+      overflow: 'hidden',
+      border: 'var(--editor-border, 1px solid var(--border-color))',
     }}>
-      <div className="editor-header" style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '1rem',
-        backgroundColor: '#f7fafc',
-        borderRadius: '8px',
-        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-        border: '1px solid #e2e8f0',
-      }}>
-        <div className="document-info" style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-        }}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#4a5568' }}>
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-            <polyline points="10 9 9 9 8 9"></polyline>
-          </svg>
-          <span style={{ fontWeight: 500, color: '#2d3748' }}>文档ID: </span>
-          <span style={{ 
-            backgroundColor: '#ebf8ff', 
-            padding: '0.2rem 0.5rem', 
-            borderRadius: '4px',
-            fontSize: '0.9rem',
-            color: '#2c5282',
-            fontFamily: 'monospace'
-          }}>{documentId}</span>
-        </div>
-        
-        <div className="active-users" style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-        }}>
-          <span style={{ fontSize: '0.9rem', color: '#718096' }}>在线用户:</span>
-          <div style={{ display: 'flex', marginLeft: '0.5rem' }}>
-            {activeUsers.map((user, index) => (
-              <div 
-                key={index} 
-                style={{ 
-                  position: 'relative',
-                  marginLeft: index > 0 ? '-8px' : '0',
-                  zIndex: activeUsers.length - index,
-                }}
-                title={user.name}
-              >
-                <div style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  backgroundColor: user.color,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  fontWeight: 'bold',
-                  fontSize: '0.75rem',
-                  border: '2px solid #fff',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                }}>
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      
-      <div className="editor-toolbar" style={{
-        display: 'flex',
-        gap: '0.25rem',
-        padding: '0.5rem 0.75rem',
-        backgroundColor: '#f7fafc',
-        borderRadius: '8px 8px 0 0',
-        borderTop: '1px solid #e2e8f0',
-        borderLeft: '1px solid #e2e8f0',
-        borderRight: '1px solid #e2e8f0',
-      }}>
-        <button 
-          onClick={() => editor?.chain().focus().toggleBold().run()} 
-          className={editor?.isActive('bold') ? 'is-active' : ''}
-          style={{
-            padding: '0.3rem 0.6rem',
-            borderRadius: '4px',
-            border: 'none',
-            background: editor?.isActive('bold') ? '#e2e8f0' : 'transparent',
-            cursor: 'pointer',
-            color: '#4a5568',
-            fontWeight: editor?.isActive('bold') ? 'bold' : 'normal',
-          }}
-        >
-          B
-        </button>
-        <button 
-          onClick={() => editor?.chain().focus().toggleItalic().run()} 
-          className={editor?.isActive('italic') ? 'is-active' : ''}
-          style={{
-            padding: '0.3rem 0.6rem',
-            borderRadius: '4px',
-            border: 'none',
-            background: editor?.isActive('italic') ? '#e2e8f0' : 'transparent',
-            cursor: 'pointer',
-            color: '#4a5568',
-            fontStyle: editor?.isActive('italic') ? 'italic' : 'normal',
-          }}
-        >
-          I
-        </button>
-      </div>
-      
-      <div className="editor-content" style={{
-        flexGrow: 1,
-        border: '1px solid #e2e8f0',
-        borderRadius: '0 0 8px 8px',
-        overflow: 'hidden',
-      }}>
-        <EditorContent editor={editor} />
-      </div>
-      
-      <div className="editor-footer" style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        padding: '0.75rem',
-        fontSize: '0.85rem',
-        color: '#718096',
-        borderTop: '1px solid #e2e8f0',
-      }}>
-        <div>
-          已连接 · 由 {username} 编辑中
-        </div>
-        <div>
-          实时协作中
-        </div>
-      </div>
+      <style dangerouslySetInnerHTML={{__html: editorStyles}} />
+      <EditorContent editor={editor} style={{ height: '100%' }} />
     </div>
   );
-};
+});
+
+// 为组件添加显示名称，提高开发体验
+CollaborativeEditor.displayName = 'CollaborativeEditor';
 
 export default CollaborativeEditor; 

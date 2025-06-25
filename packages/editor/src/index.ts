@@ -1,1 +1,2 @@
-export { default as CollaborativeEditor } from './CollaborativeEditor'; 
+export { CollaborativeEditor } from './CollaborativeEditor';
+export type { CollaborativeEditorRef } from './CollaborativeEditor'; 
