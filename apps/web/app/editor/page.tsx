@@ -1,10 +1,55 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import { CollaborativeEditor, CollaborativeEditorRef } from '@repo/editor';
+import React, { useState, useEffect, useRef, forwardRef, useCallback } from 'react';
+import { CollaborativeEditor } from '@repo/editor';
 import { Button } from '@repo/ui';
 import Link from 'next/link';
 import styles from './page.module.css';
+
+// 定义缺失的接口
+interface CollaborativeEditorRef {
+  getEditor: () => any;
+}
+
+// 创建自定义包装组件
+interface CustomEditorProps {
+  documentId: string;
+  username: string;
+  onActiveUsersChange?: (users: Array<{name: string, color: string}>) => void;
+}
+
+const CustomCollaborativeEditor = forwardRef<CollaborativeEditorRef, CustomEditorProps>(
+  (props, ref) => {
+    // 保留所有必需的属性
+    const { onActiveUsersChange, ...requiredProps } = props;
+    
+    // 确保documentId有效 - 使用固定的格式
+    const validDocId = props.documentId.trim() ? props.documentId : `doc_${Date.now()}`;
+    
+    // 记录连接ID，帮助调试 - 仅在组件挂载时记录一次
+    useEffect(() => {
+      console.log(`协作文档ID: ${validDocId}`);
+    }, [validDocId]);
+
+    // 记忆化回调函数，避免在每次渲染时创建新的函数实例
+    const stableOnActiveUsersChange = useCallback((users: Array<{name: string, color: string}>) => {
+      if (onActiveUsersChange) {
+        onActiveUsersChange(users);
+      }
+    }, [onActiveUsersChange]);
+    
+    // 将所有必需的属性传递给原始组件，确保documentId有效
+    // 使用记忆化的回调来避免无限重渲染
+    return <CollaborativeEditor 
+      ref={ref} 
+      {...requiredProps} 
+      documentId={validDocId} 
+      onActiveUsersChange={stableOnActiveUsersChange}
+    />;
+  }
+);
+
+CustomCollaborativeEditor.displayName = 'CustomCollaborativeEditor';
 
 export default function EditorPage() {
   // 状态管理
@@ -31,6 +76,11 @@ export default function EditorPage() {
   // 编辑器引用
   const editorRef = useRef<CollaborativeEditorRef>(null);
   
+  // 使用useCallback包装onActiveUsersChange，避免不必要的重新创建
+  const handleActiveUsersChange = useCallback((users: Array<{name: string, color: string}>) => {
+    setActiveUsers(users);
+  }, []);
+  
   // 初始化
   useEffect(() => {
     // 生成随机用户名
@@ -53,11 +103,16 @@ export default function EditorPage() {
 
   // 处理加入文档
   const handleJoinDocument = () => {
-    if (documentId.trim()) {
-      setIsEditorReady(true);
+    if (!documentId.trim()) {
+      // 如果没有提供ID，自动生成一个
+      const newDocId = 'doc_' + Date.now();
+      setDocumentId(newDocId);
+      updateUrlWithDocId(newDocId);
+    } else {
       // 更新URL以包含文档ID参数
       updateUrlWithDocId(documentId);
     }
+    setIsEditorReady(true);
   };
 
   // 处理创建新文档
@@ -91,11 +146,6 @@ export default function EditorPage() {
     navigator.clipboard.writeText(documentId);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
-  };
-  
-  // 处理活跃用户变化
-  const handleActiveUsersChange = (users: Array<{name: string, color: string}>) => {
-    setActiveUsers(users);
   };
   
   // 处理工具栏按钮点击
@@ -409,7 +459,8 @@ export default function EditorPage() {
             
             {/* 编辑器内容区域 */}
             <div className={styles.editorContent}>
-              <CollaborativeEditor 
+              {/* 确保传递稳定的回调函数给编辑器组件 */}
+              <CustomCollaborativeEditor 
                 documentId={documentId} 
                 username={username} 
                 ref={editorRef} 
