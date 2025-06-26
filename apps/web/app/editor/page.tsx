@@ -6,9 +6,26 @@ import { Button } from '@repo/ui';
 import Link from 'next/link';
 import styles from './page.module.css';
 
-// 定义缺失的接口
+// 定义编辑器类型接口
+interface EditorInterface {
+  chain: () => { focus: () => any };
+  isActive: (name: string, attrs?: Record<string, any>) => boolean;
+  on: (event: string, handler: () => void) => void;
+  off: (event: string, handler: () => void) => void;
+}
+
+// 定义协作编辑器的引用类型
 interface CollaborativeEditorRef {
-  getEditor: () => any;
+  getEditor: () => EditorInterface;
+}
+
+// 定义协作编辑器的属性类型
+interface CollaborativeEditorProps {
+  documentId: string;
+  username: string;
+  userColor?: string;
+  websocketUrl?: string;
+  onActiveUsersChange?: (users: Array<{name: string, color: string}>) => void;
 }
 
 // 创建自定义包装组件
@@ -21,10 +38,10 @@ interface CustomEditorProps {
 const CustomCollaborativeEditor = forwardRef<CollaborativeEditorRef, CustomEditorProps>(
   (props, ref) => {
     // 保留所有必需的属性
-    const { onActiveUsersChange, ...requiredProps } = props;
+    const { documentId, username, onActiveUsersChange } = props;
     
     // 确保documentId有效 - 使用固定的格式
-    const validDocId = props.documentId.trim() ? props.documentId : `doc_${Date.now()}`;
+    const validDocId = documentId.trim() ? documentId : `doc_${Date.now()}`;
     
     // 记录连接ID，帮助调试 - 仅在组件挂载时记录一次
     useEffect(() => {
@@ -38,18 +55,40 @@ const CustomCollaborativeEditor = forwardRef<CollaborativeEditorRef, CustomEdito
       }
     }, [onActiveUsersChange]);
     
-    // 将所有必需的属性传递给原始组件，确保documentId有效
-    // 使用记忆化的回调来避免无限重渲染
-    return <CollaborativeEditor 
-      ref={ref} 
-      {...requiredProps} 
-      documentId={validDocId} 
-      onActiveUsersChange={stableOnActiveUsersChange}
-    />;
+    // 用类型断言解决TypeScript类型检查问题
+    const EditorComponent = CollaborativeEditor as React.ForwardRefExoticComponent<
+      {
+        documentId: string;
+        username: string;
+        onActiveUsersChange?: (users: Array<{name: string, color: string}>) => void;
+      } & React.RefAttributes<CollaborativeEditorRef>
+    >;
+    
+    return (
+      <div className="collaborative-editor-wrapper" style={{width: '100%', height: '100%'}}>
+        <EditorComponent
+          ref={ref}
+          documentId={validDocId}
+          username={username}
+          onActiveUsersChange={stableOnActiveUsersChange}
+        />
+      </div>
+    );
   }
 );
 
 CustomCollaborativeEditor.displayName = 'CustomCollaborativeEditor';
+
+// 当评论列表为空时显示的组件
+const EmptyComments = () => (
+  <div className={styles.emptyComments}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+    </svg>
+    <p>暂无评论</p>
+    <span>添加第一条评论来开始讨论</span>
+  </div>
+);
 
 export default function EditorPage() {
   // 状态管理
@@ -72,6 +111,14 @@ export default function EditorPage() {
     blockquote: false,
     code: false,
   });
+  
+  // 新增状态
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [commentSidebarOpen, setCommentSidebarOpen] = useState(false);
+  const [outline, setOutline] = useState<Array<{id: string, level: number, text: string}>>([]);
+  const [comments, setComments] = useState<Array<{id: string, author: string, content: string, timestamp: Date}>>([]);
+  const [newComment, setNewComment] = useState('');
+  const [viewMode, setViewMode] = useState<'edit' | 'read' | 'present'>('edit');
   
   // 编辑器引用
   const editorRef = useRef<CollaborativeEditorRef>(null);
@@ -154,7 +201,7 @@ export default function EditorPage() {
     if (!editor) return;
 
     try {
-      const chain = editor.chain().focus() as any;
+      const chain = (editor.chain().focus() as any);
       
       switch (tool) {
         case 'bold':
@@ -190,6 +237,29 @@ export default function EditorPage() {
         case 'code':
           chain.toggleCodeBlock().run();
           break;
+        // 新增功能
+        case 'alignLeft':
+          chain.setTextAlign('left').run();
+          break;
+        case 'alignCenter':
+          chain.setTextAlign('center').run();
+          break;
+        case 'alignRight':
+          chain.setTextAlign('right').run();
+          break;
+        case 'indent':
+          chain.indent().run();
+          break;
+        case 'outdent':
+          chain.outdent().run();
+          break;
+        case 'table':
+          chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+          break;
+        case 'textColor':
+          // 简单实现，实际应该弹出颜色选择器
+          chain.setColor('#7aa2f7').run();
+          break;
         default:
           break;
       }
@@ -197,17 +267,17 @@ export default function EditorPage() {
       // 更新工具栏状态以反映当前文本格式
       setTimeout(() => {
         setToolbarState({
-          bold: editor.isActive('bold'),
-          italic: editor.isActive('italic'),
-          strike: editor.isActive('strike'),
-          underline: editor.isActive('underline'),
-          heading1: editor.isActive('heading', { level: 1 }),
-          heading2: editor.isActive('heading', { level: 2 }),
-          heading3: editor.isActive('heading', { level: 3 }),
-          bulletList: editor.isActive('bulletList'),
-          orderedList: editor.isActive('orderedList'),
-          blockquote: editor.isActive('blockquote'),
-          code: editor.isActive('codeBlock'),
+          bold: (editor as any).isActive('bold'),
+          italic: (editor as any).isActive('italic'),
+          strike: (editor as any).isActive('strike'),
+          underline: (editor as any).isActive('underline'),
+          heading1: (editor as any).isActive('heading', { level: 1 }),
+          heading2: (editor as any).isActive('heading', { level: 2 }),
+          heading3: (editor as any).isActive('heading', { level: 3 }),
+          bulletList: (editor as any).isActive('bulletList'),
+          orderedList: (editor as any).isActive('orderedList'),
+          blockquote: (editor as any).isActive('blockquote'),
+          code: (editor as any).isActive('codeBlock'),
         });
       }, 10);
     } catch (error) {
@@ -222,28 +292,57 @@ export default function EditorPage() {
     
     const updateToolbarState = () => {
       setToolbarState({
-        bold: editor.isActive('bold'),
-        italic: editor.isActive('italic'),
-        strike: editor.isActive('strike'),
-        underline: editor.isActive('underline'),
-        heading1: editor.isActive('heading', { level: 1 }),
-        heading2: editor.isActive('heading', { level: 2 }),
-        heading3: editor.isActive('heading', { level: 3 }),
-        bulletList: editor.isActive('bulletList'),
-        orderedList: editor.isActive('orderedList'),
-        blockquote: editor.isActive('blockquote'),
-        code: editor.isActive('codeBlock'),
+        bold: (editor as any).isActive('bold'),
+        italic: (editor as any).isActive('italic'),
+        strike: (editor as any).isActive('strike'),
+        underline: (editor as any).isActive('underline'),
+        heading1: (editor as any).isActive('heading', { level: 1 }),
+        heading2: (editor as any).isActive('heading', { level: 2 }),
+        heading3: (editor as any).isActive('heading', { level: 3 }),
+        bulletList: (editor as any).isActive('bulletList'),
+        orderedList: (editor as any).isActive('orderedList'),
+        blockquote: (editor as any).isActive('blockquote'),
+        code: (editor as any).isActive('codeBlock'),
       });
     };
 
-    editor.on('selectionUpdate', updateToolbarState);
-    editor.on('focus', updateToolbarState);
+    (editor as any).on('selectionUpdate', updateToolbarState);
+    (editor as any).on('focus', updateToolbarState);
     
     return () => {
-      editor.off('selectionUpdate', updateToolbarState);
-      editor.off('focus', updateToolbarState);
+      (editor as any).off('selectionUpdate', updateToolbarState);
+      (editor as any).off('focus', updateToolbarState);
     };
   }, [isEditorReady]);
+
+  // 处理大纲点击
+  const handleOutlineClick = (id: string) => {
+    const editor = editorRef.current?.getEditor();
+    if (editor) {
+      // 实现逻辑：滚动到对应的标题位置
+      console.log(`Scroll to heading with id: ${id}`);
+    }
+  };
+
+  // 处理添加评论
+  const handleAddComment = () => {
+    if (newComment.trim()) {
+      const comment = {
+        id: `comment_${Date.now()}`,
+        author: username,
+        content: newComment,
+        timestamp: new Date()
+      };
+      setComments([...comments, comment]);
+      setNewComment('');
+      setCommentSidebarOpen(true);
+    }
+  };
+
+  // 处理视图模式切换
+  const handleViewModeChange = (mode: 'edit' | 'read' | 'present') => {
+    setViewMode(mode);
+  };
 
   // 渲染工具栏按钮
   const renderToolbarButton = (name: string, icon: React.ReactNode, isActive: boolean = false) => {
@@ -264,19 +363,67 @@ export default function EditorPage() {
       {/* 顶部导航栏 */}
       <header className={styles.header}>
         <div className={styles.headerInner}>
-          <Link href="/" className={styles.logo}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.logoIcon}>
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-            <span>协同文档</span>
-          </Link>
+          <div className={styles.headerLeft}>
+            <Link href="/" className={styles.logo}>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.logoIcon}>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+              <span>协同文档</span>
+            </Link>
+
+            {isEditorReady && (
+              <input 
+                type="text" 
+                value={documentTitle} 
+                onChange={handleTitleChange}
+                placeholder="无标题文档"
+                className={styles.documentTitleHeader}
+                aria-label="文档标题"
+              />
+            )}
+          </div>
           
           {isEditorReady ? (
             <div className={styles.headerActions}>
+              {/* 视图模式切换 */}
+              <div className={styles.viewModeToggle}>
+                <button 
+                  className={`${styles.viewModeButton} ${viewMode === 'edit' ? styles.active : ''}`}
+                  onClick={() => handleViewModeChange('edit')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 20h9"></path>
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                  </svg>
+                  <span>编辑</span>
+                </button>
+                <button 
+                  className={`${styles.viewModeButton} ${viewMode === 'read' ? styles.active : ''}`}
+                  onClick={() => handleViewModeChange('read')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                  <span>阅读</span>
+                </button>
+                <button 
+                  className={`${styles.viewModeButton} ${viewMode === 'present' ? styles.active : ''}`}
+                  onClick={() => handleViewModeChange('present')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                  </svg>
+                  <span>演示</span>
+                </button>
+              </div>
+
               {/* 活跃用户头像区域 */}
               <div className={styles.activeUsers}>
                 {activeUsers.length > 0 && (
@@ -287,7 +434,7 @@ export default function EditorPage() {
                       </div>
                     ))}
                     {activeUsers.length > 3 && (
-                      <div className={styles.userAvatar} style={{ backgroundColor: 'var(--bg-color-light)' }}>
+                      <div className={styles.userAvatar} style={{ backgroundColor: 'var(--bg-hover)' }}>
                         +{activeUsers.length - 3}
                       </div>
                     )}
@@ -295,27 +442,42 @@ export default function EditorPage() {
                 )}
               </div>
               
-              {/* 复制文档ID按钮 */}
+              {/* 分享按钮 */}
               <button 
-                className={styles.headerButton} 
+                className={`${styles.headerButton} ${styles.shareButton}`} 
                 onClick={handleCopyDocId}
-                aria-label="复制文档ID"
+                title={isCopied ? '已复制链接' : '分享文档'}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  <circle cx="18" cy="5" r="3"></circle>
+                  <circle cx="6" cy="12" r="3"></circle>
+                  <circle cx="18" cy="19" r="3"></circle>
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
                 </svg>
-                <span>{isCopied ? '已复制ID' : '复制文档ID'}</span>
+                <span>{isCopied ? '已复制链接' : '分享'}</span>
               </button>
               
-              {/* 返回首页按钮 */}
-              <Link href="/" className={styles.headerButton}>
+              {/* 评论按钮 */}
+              <button 
+                className={`${styles.headerButton} ${commentSidebarOpen ? styles.active : ''}`} 
+                onClick={() => setCommentSidebarOpen(!commentSidebarOpen)}
+                title="评论"
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                 </svg>
-                <span>返回首页</span>
-              </Link>
+                <span>评论</span>
+              </button>
+              
+              {/* 更多选项 */}
+              <button className={styles.headerButton} title="更多选项">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="1"></circle>
+                  <circle cx="19" cy="12" r="1"></circle>
+                  <circle cx="5" cy="12" r="1"></circle>
+                </svg>
+              </button>
             </div>
           ) : (
             <nav className={styles.nav}>
@@ -335,137 +497,287 @@ export default function EditorPage() {
       
       <main className={styles.main}>
         {isEditorReady ? (
-          <div className={styles.editorContainer}>
-            {/* 编辑器标题区域 */}
-            <div className={styles.editorHeader}>
-              <div className={styles.documentMeta}>
-                <input 
-                  type="text" 
-                  value={documentTitle} 
-                  onChange={handleTitleChange}
-                  placeholder="无标题文档"
-                  className={styles.documentTitle}
-                  aria-label="文档标题"
-                />
-                <div className={styles.documentInfo}>
-                  <span className={styles.docIdLabel}>文档ID: </span>
-                  <span className={styles.docId}>{documentId}</span>
+          <div className={styles.editorLayout}>
+            {/* 左侧边栏 - 目录导航 */}
+            <div className={`${styles.sidebar} ${sidebarOpen ? styles.open : styles.closed}`}>
+              <div className={styles.sidebarHeader}>
+                <h3>目录大纲</h3>
+                <button 
+                  className={styles.sidebarToggle}
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  aria-label={sidebarOpen ? "关闭侧边栏" : "打开侧边栏"}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    {sidebarOpen ? (
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                    ) : (
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    )}
+                  </svg>
+                </button>
+              </div>
+              
+              <div className={styles.outlineList}>
+                {outline.length > 0 ? (
+                  <ul className={styles.outline}>
+                    {outline.map((item) => (
+                      <li 
+                        key={item.id} 
+                        className={styles.outlineItem}
+                        style={{ paddingLeft: `${(item.level - 1) * 16}px` }}
+                        onClick={() => handleOutlineClick(item.id)}
+                      >
+                        <span className={styles.outlineIndicator}></span>
+                        <span className={styles.outlineTitle}>{item.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className={styles.emptyOutline}>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="32" height="32">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                    </svg>
+                    <p>添加标题来创建目录</p>
+                    <span className={styles.outlineHint}>使用「H1、H2、H3」按钮添加标题</span>
+                  </div>
+                )}
+              </div>
+              
+              <div className={styles.sidebarActions}>
+                <button className={styles.addSectionButton}>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  <span>添加章节</span>
+                </button>
+              </div>
+            </div>
+            
+            <div className={styles.editorContainer}>
+              {/* 更新后的工具栏区域，更简洁现代 */}
+              <div className={styles.toolbar}>
+                {/* 文字格式控制 */}
+                <div className={styles.toolbarGroup}>
+                  <div className={styles.toolbarDropdown}>
+                    <button className={styles.toolbarDropdownButton}>
+                      <span>正文</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div className={styles.toolbarSeparator} />
+
+                <div className={styles.toolbarGroup}>
+                  {renderToolbarButton('heading1', 
+                    <span className={styles.headingButton}>H1</span>, 
+                    toolbarState.heading1)}
+                  {renderToolbarButton('heading2', 
+                    <span className={styles.headingButton}>H2</span>, 
+                    toolbarState.heading2)}
+                  {renderToolbarButton('heading3', 
+                    <span className={styles.headingButton}>H3</span>, 
+                    toolbarState.heading3)}
+                </div>
+                
+                <div className={styles.toolbarSeparator} />
+
+                {/* 文字样式控制 */}
+                <div className={styles.toolbarGroup}>
+                  {renderToolbarButton('bold', 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path>
+                      <path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path>
+                    </svg>, 
+                    toolbarState.bold)}
+                  {renderToolbarButton('italic', 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <line x1="19" y1="4" x2="10" y2="4"></line>
+                      <line x1="14" y1="20" x2="5" y2="20"></line>
+                      <line x1="15" y1="4" x2="9" y2="20"></line>
+                    </svg>, 
+                    toolbarState.italic)}
+                  {renderToolbarButton('underline', 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <path d="M6 3v7a6 6 0 0 0 6 6 6 6 0 0 0 6-6V3"></path>
+                      <line x1="4" y1="21" x2="20" y2="21"></line>
+                    </svg>, 
+                    toolbarState.underline)}
+                  {renderToolbarButton('strike', 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                      <path d="M16 6c-.5-2-2.5-3-4.5-3S7 4 7 6"></path>
+                      <path d="M8 18c.5 2 2.5 3 4.5 3s4-1 4.5-3"></path>
+                    </svg>, 
+                    toolbarState.strike)}
+                </div>
+
+                <div className={styles.toolbarSeparator} />
+
+                {/* 列表和引用 */}
+                <div className={styles.toolbarGroup}>
+                  {renderToolbarButton('bulletList', 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <line x1="9" y1="6" x2="20" y2="6"></line>
+                      <line x1="9" y1="12" x2="20" y2="12"></line>
+                      <line x1="9" y1="18" x2="20" y2="18"></line>
+                      <circle cx="4" cy="6" r="2"></circle>
+                      <circle cx="4" cy="12" r="2"></circle>
+                      <circle cx="4" cy="18" r="2"></circle>
+                    </svg>, 
+                    toolbarState.bulletList)}
+                  {renderToolbarButton('orderedList', 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <line x1="10" y1="6" x2="21" y2="6"></line>
+                      <line x1="10" y1="12" x2="21" y2="12"></line>
+                      <line x1="10" y1="18" x2="21" y2="18"></line>
+                      <path d="M4 6h1v4"></path>
+                      <path d="M4 10h2"></path>
+                      <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path>
+                    </svg>, 
+                    toolbarState.orderedList)}
+                  {renderToolbarButton('blockquote', 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path>
+                      <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"></path>
+                    </svg>, 
+                    toolbarState.blockquote)}
+                </div>
+
+                <div className={styles.toolbarSeparator} />
+
+                {/* 对齐和缩进 */}
+                <div className={styles.toolbarGroup}>
+                  {renderToolbarButton('alignLeft', 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <line x1="21" y1="6" x2="3" y2="6"></line>
+                      <line x1="15" y1="12" x2="3" y2="12"></line>
+                      <line x1="17" y1="18" x2="3" y2="18"></line>
+                    </svg>)}
+                  {renderToolbarButton('alignCenter', 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <line x1="21" y1="6" x2="3" y2="6"></line>
+                      <line x1="18" y1="12" x2="6" y2="12"></line>
+                      <line x1="21" y1="18" x2="3" y2="18"></line>
+                    </svg>)}
+                  {renderToolbarButton('alignRight', 
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <line x1="21" y1="6" x2="3" y2="6"></line>
+                      <line x1="21" y1="12" x2="9" y2="12"></line>
+                      <line x1="21" y1="18" x2="7" y2="18"></line>
+                    </svg>)}
+                </div>
+
+                <div className={styles.toolbarSeparator} />
+
+                {/* 插入功能 */}
+                <div className={styles.toolbarGroup}>
+                  <button className={`${styles.toolbarButton} ${styles.insertButton}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                      <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                    <span>插入</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </button>
+                </div>
+                
+                <div className={styles.toolbarSeparator} />
+
+                {/* 评论功能 */}
+                <div className={styles.toolbarGroup}>
+                  <button 
+                    className={`${styles.toolbarButton} ${styles.commentButton}`}
+                    onClick={() => setCommentSidebarOpen(!commentSidebarOpen)}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span>评论</span>
+                  </button>
                 </div>
               </div>
-            </div>
-            
-            {/* 工具栏区域 */}
-            <div className={styles.toolbar}>
-              <div className={styles.toolbarGroup}>
-                {renderToolbarButton('bold', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path>
-                    <path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path>
-                  </svg>, 
-                  toolbarState.bold)}
-                {renderToolbarButton('italic', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="19" y1="4" x2="10" y2="4"></line>
-                    <line x1="14" y1="20" x2="5" y2="20"></line>
-                    <line x1="15" y1="4" x2="9" y2="20"></line>
-                  </svg>, 
-                  toolbarState.italic)}
-                {renderToolbarButton('underline', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M6 3v7a6 6 0 0 0 6 6 6 6 0 0 0 6-6V3"></path>
-                    <line x1="4" y1="21" x2="20" y2="21"></line>
-                  </svg>, 
-                  toolbarState.underline)}
-                {renderToolbarButton('strike', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                    <path d="M16 6C16 6 16 6 16 6c-1.1 0-2-.9-2-2 0 0 0 0 0 0h-4c0 0 0 0 0 0 0 1.1-.9 2-2 2 0 0 0 0 0 0"></path>
-                    <path d="M8 18c0 0 0 0 0 0 1.1 0 2 .9 2 2 0 0 0 0 0 0h4c0 0 0 0 0 0 0-1.1.9-2 2-2 0 0 0 0 0 0"></path>
-                  </svg>, 
-                  toolbarState.strike)}
-              </div>
-
-              <div className={styles.toolbarSeparator} />
               
-              <div className={styles.toolbarGroup}>
-                {renderToolbarButton('heading1', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 12h16"></path>
-                    <path d="M4 18V6"></path>
-                    <path d="M12 18V6"></path>
-                    <path d="M11 12h12"></path>
-                  </svg>, 
-                  toolbarState.heading1)}
-                {renderToolbarButton('heading2', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 12h16"></path>
-                    <path d="M4 18V6"></path>
-                    <path d="M12 18V6"></path>
-                    <path d="M11 12h4"></path>
-                  </svg>, 
-                  toolbarState.heading2)}
-                {renderToolbarButton('heading3', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 12h16"></path>
-                    <path d="M4 18V6"></path>
-                    <path d="M12 18V6"></path>
-                    <path d="M11 12h2"></path>
-                  </svg>, 
-                  toolbarState.heading3)}
-              </div>
-
-              <div className={styles.toolbarSeparator} />
-              
-              <div className={styles.toolbarGroup}>
-                {renderToolbarButton('bulletList', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="9" y1="6" x2="20" y2="6"></line>
-                    <line x1="9" y1="12" x2="20" y2="12"></line>
-                    <line x1="9" y1="18" x2="20" y2="18"></line>
-                    <circle cx="4" cy="6" r="2"></circle>
-                    <circle cx="4" cy="12" r="2"></circle>
-                    <circle cx="4" cy="18" r="2"></circle>
-                  </svg>, 
-                  toolbarState.bulletList)}
-                {renderToolbarButton('orderedList', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="10" y1="6" x2="21" y2="6"></line>
-                    <line x1="10" y1="12" x2="21" y2="12"></line>
-                    <line x1="10" y1="18" x2="21" y2="18"></line>
-                    <path d="M4 6h1v4"></path>
-                    <path d="M4 10h2"></path>
-                    <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path>
-                  </svg>, 
-                  toolbarState.orderedList)}
-                {renderToolbarButton('blockquote', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path>
-                    <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"></path>
-                  </svg>, 
-                  toolbarState.blockquote)}
-              </div>
-
-              <div className={styles.toolbarSeparator} />
-              
-              <div className={styles.toolbarGroup}>
-                {renderToolbarButton('code', 
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="16 18 22 12 16 6"></polyline>
-                    <polyline points="8 6 2 12 8 18"></polyline>
-                  </svg>, 
-                  toolbarState.code)}
+              {/* 编辑器内容区域 */}
+              <div className={`${styles.editorContent} ${viewMode === 'read' ? styles.readMode : ''} ${viewMode === 'present' ? styles.presentMode : ''}`}>
+                <CustomCollaborativeEditor 
+                  documentId={documentId} 
+                  username={username} 
+                  ref={editorRef} 
+                  onActiveUsersChange={handleActiveUsersChange}
+                />
               </div>
             </div>
             
-            {/* 编辑器内容区域 */}
-            <div className={styles.editorContent}>
-              {/* 确保传递稳定的回调函数给编辑器组件 */}
-              <CustomCollaborativeEditor 
-                documentId={documentId} 
-                username={username} 
-                ref={editorRef} 
-                onActiveUsersChange={handleActiveUsersChange}
-              />
+            {/* 右侧评论区 */}
+            <div className={`${styles.commentSidebar} ${commentSidebarOpen ? styles.open : styles.closed}`}>
+              <div className={styles.commentSidebarHeader}>
+                <h3>评论</h3>
+                <button 
+                  className={styles.commentSidebarClose}
+                  onClick={() => setCommentSidebarOpen(false)}
+                  aria-label="关闭评论区"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+              
+              <div className={styles.commentList}>
+                {comments.length > 0 ? (
+                  comments.map((comment) => (
+                    <div key={comment.id} className={styles.commentItem}>
+                      <div className={styles.commentHeader}>
+                        <div className={styles.commentAuthor}>
+                          <div className={styles.commentAvatar}>
+                            {comment.author && comment.author[0]?.toUpperCase()}
+                          </div>
+                          <span>{comment.author}</span>
+                        </div>
+                        <div className={styles.commentTime}>
+                          {new Date(comment.timestamp).toLocaleTimeString()}
+                        </div>
+                      </div>
+                      <div className={styles.commentContent}>
+                        {comment.content}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <EmptyComments />
+                )}
+              </div>
+              
+              <div className={styles.addCommentForm}>
+                <input
+                  type="text"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="添加评论..."
+                  className={styles.addCommentInput}
+                  onKeyPress={(e) => e.key === 'Enter' && handleAddComment()}
+                />
+                <button 
+                  className={styles.addCommentButton}
+                  onClick={handleAddComment}
+                  disabled={!newComment.trim()}
+                  aria-label="发送评论"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         ) : (

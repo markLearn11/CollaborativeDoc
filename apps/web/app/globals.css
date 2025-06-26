@@ -1,7 +1,8 @@
 :root {
   /* 主题颜色 */
-  --primary-color: #3182ce;
-  --primary-color-dark: #2c5282;
+  --primary-color: #3370ff;
+  --primary-color-dark: #2860e0;
+  --primary-color-light: #e6f7ff;
   --secondary-color: #805ad5;
   --primary-light: #90cdf4;
   --secondary-light: #a78bfa;
@@ -12,40 +13,46 @@
   --accent-rgb: 236, 72, 153;
   
   /* 背景色 */
-  --bg-color: #f7fafc;
+  --bg-color: #f5f6f7;
   --bg-color-light: #edf2f7;
   --bg-color-dark: #1a202c;
   --bg-color-card: #fff;
   --bg-color-dark-card: #2d3748;
+  --bg-hover: #f0f2f5;
+  --bg-body: #f5f6f7;
+  --bg-header: rgba(255, 255, 255, 0.9);
   
   /* 文字颜色 */
-  --text-color: #1a202c;
-  --text-color-light: #718096;
+  --text-color: #333;
+  --text-color-light: #666;
   --text-color-lighter: #a0aec0;
   --text-color-dark: #f7fafc;
+  --text-white: #fff;
   
   /* 边框和阴影 */
-  --border-color: #e2e8f0;
+  --border-color: #e8e8e8;
   --border-color-hover: #cbd5e1;
   --border-color-dark: #4a5568;
-  --border-radius: 12px;
+  --border-radius: 8px;
   --border-radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 16px;
   --radius-full: 9999px;
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 4px 20px rgba(0, 0, 0, 0.12);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   
   /* 动画 */
-  --transition: all 0.2s ease-in-out;
-  --transition-fast: all 0.15s ease-in-out;
+  --transition: all 0.3s ease;
+  --transition-fast: all 0.2s ease;
   --transition-slow: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
   
   /* 布局 */
-  --max-width: 1200px;
+  --max-width: 1400px;
   --container-padding: 2rem;
+  --header-height: 60px;
+  --container-max-width: 1400px;
   
   /* 渐变 */
   --gradient-primary: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
@@ -56,16 +63,22 @@
   --warning-color: #f59e0b;
   --error-color: #ef4444;
   --info-color: #3b82f6;
+  
+  /* 字体 */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-color: #171923;
-    --bg-color-card: #2d3748;
-    --text-color: #f7fafc;
-    --text-color-light: #cbd5e0;
+    --bg-color: #111827;
+    --bg-color-card: #1f2937;
+    --bg-hover: #2d3748;
+    --bg-body: #0f172a;
+    --bg-header: rgba(15, 23, 42, 0.9);
+    --text-color: #e3e3e3;
+    --text-color-light: #b0b0b0;
     --text-color-lighter: #a0aec0;
-    --border-color: #4a5568;
+    --border-color: #2d3748;
     
     --bg-color-light: #1e293b;
     --bg-color-dark: #020617;

@@ -11,6 +11,15 @@ import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
+import Underline from '@tiptap/extension-underline';
+import TextAlign from '@tiptap/extension-text-align';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
+import Color from '@tiptap/extension-color';
+import TextStyle from '@tiptap/extension-text-style';
+import Indent from '@weiruo/tiptap-extension-indent';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 
@@ -118,6 +127,24 @@ export const CollaborativeEditor = forwardRef<CollaborativeEditorRef, Collaborat
         Collaboration.configure({
           document: ydocRef.current,
         }),
+        // 添加新功能扩展
+        Underline,
+        TextAlign.configure({
+          types: ['heading', 'paragraph'],
+        }),
+        TextStyle,
+        Color,
+        Indent.configure({
+          types: ['listItem', 'paragraph'],
+          minLevel: 0,
+          maxLevel: 8,
+        }),
+        Table.configure({
+          resizable: true,
+        }),
+        TableRow,
+        TableHeader,
+        TableCell,
         // 只有当provider存在时才添加CollaborationCursor扩展
         ...(providerRef.current ? [
           CollaborationCursor.configure({
