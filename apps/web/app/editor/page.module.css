@@ -139,6 +139,13 @@
   stroke: var(--primary);
 }
 
+/* 文档标题容器样式 */
+.documentTitleContainer {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .documentTitleHeader {
   border: none;
   font-size: 1.125rem;
@@ -160,6 +167,22 @@
   background: var(--bg-hover);
   width: 250px;
   box-shadow: var(--shadow-sm);
+}
+
+/* 未保存状态样式 */
+.documentTitleHeader.unsaved {
+  border-right: 3px solid var(--primary);
+}
+
+.savingIndicator {
+  position: absolute;
+  right: -60px;
+  font-size: 12px;
+  color: var(--text-light);
+  opacity: 0.8;
+  background-color: var(--bg-hover);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 .headerActions {
@@ -789,7 +812,7 @@
 .activeUsers {
   display: flex;
   align-items: center;
-  margin-right: 6px;
+  margin-right: 8px;
 }
 
 .userAvatars {
@@ -798,23 +821,32 @@
 }
 
 .userAvatar {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
-  background-color: var(--primary-color);
+  background-color: var(--primary);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
-  font-weight: 600;
-  margin-right: -8px;
-  border: 2px solid var(--bg-color-card);
-  transition: transform 0.2s ease;
+  font-weight: 500;
+  margin-left: -8px;
+  border: 2px solid var(--bg-card);
+  font-size: 14px;
+  box-shadow: var(--shadow-sm);
+  
+  /* 添加更流畅的过渡效果，减少闪烁 */
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+              opacity 0.3s ease,
+              background-color 0.5s ease;
+  will-change: transform, opacity;
+  backface-visibility: hidden; /* 帮助减少闪烁 */
+  transform: translateZ(0); /* 开启硬件加速 */
+  opacity: 1;
 }
 
 .userAvatar:hover {
-  transform: translateY(-2px) scale(1.05);
+  transform: translateY(-3px);
   z-index: 10;
 }
 

@@ -120,13 +120,12 @@ export default function EditorPage() {
   const [newComment, setNewComment] = useState('');
   const [viewMode, setViewMode] = useState<'edit' | 'read' | 'present'>('edit');
   
+  // 标题相关状态
+  const [isTitleSaved, setIsTitleSaved] = useState(true);
+  const [titleLastSaved, setTitleLastSaved] = useState('无标题文档');
+  
   // 编辑器引用
   const editorRef = useRef<CollaborativeEditorRef>(null);
-  
-  // 使用useCallback包装onActiveUsersChange，避免不必要的重新创建
-  const handleActiveUsersChange = useCallback((users: Array<{name: string, color: string}>) => {
-    setActiveUsers(users);
-  }, []);
   
   // 初始化
   useEffect(() => {
@@ -140,52 +139,81 @@ export default function EditorPage() {
     if (docId) {
       setDocumentId(docId);
       setIsEditorReady(true);
+      
+      // 如果有标题参数，也一并设置
+      const urlTitle = urlParams.get('title');
+      if (urlTitle) {
+        try {
+          const decodedTitle = decodeURIComponent(urlTitle);
+          setDocumentTitle(decodedTitle);
+          setTitleLastSaved(decodedTitle);
+          document.title = `${decodedTitle} - 协同文档`;
+        } catch (e) {
+          console.error('标题解码错误', e);
+        }
+      }
     }
   }, []);
 
-  // 处理文档ID输入变化
-  const handleDocumentIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setDocumentId(e.target.value);
-  };
-
-  // 处理加入文档
-  const handleJoinDocument = () => {
-    if (!documentId.trim()) {
-      // 如果没有提供ID，自动生成一个
-      const newDocId = 'doc_' + Date.now();
-      setDocumentId(newDocId);
-      updateUrlWithDocId(newDocId);
-    } else {
-      // 更新URL以包含文档ID参数
-      updateUrlWithDocId(documentId);
-    }
-    setIsEditorReady(true);
-  };
-
-  // 处理创建新文档
-  const handleCreateDocument = () => {
-    const newDocId = 'doc_' + Date.now();
-    setDocumentId(newDocId);
-    setIsEditorReady(true);
-    // 更新URL以包含文档ID参数
-    updateUrlWithDocId(newDocId);
-  };
-
-  // 更新URL以包含文档ID参数
-  const updateUrlWithDocId = (docId: string) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('id', docId);
-    window.history.pushState({}, '', url);
-  };
-
-  // 处理用户名输入变化
-  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setUsername(e.target.value);
+  // 改进处理文档标题输入变化的函数，允许完全删除标题
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // 直接使用用户输入值，不在此处应用默认值
+    const newTitle = e.target.value;
+    setDocumentTitle(newTitle);
+    setIsTitleSaved(false);
+    
+    // 更新浏览器标题，如果为空则显示默认值
+    document.title = newTitle ? `${newTitle} - 协同文档` : `协同文档`;
   };
   
-  // 处理文档标题输入变化
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setDocumentTitle(e.target.value || '无标题文档');
+  // 在失去焦点时应用默认值
+  const handleTitleBlur = () => {
+    // 如果标题为空，设置默认值
+    if (!documentTitle.trim()) {
+      setDocumentTitle('无标题文档');
+      document.title = `无标题文档 - 协同文档`;
+    }
+    
+    // 保存标题
+    saveDocumentTitle();
+  };
+  
+  // 添加标题保存函数
+  const saveDocumentTitle = useCallback(() => {
+    if (!isTitleSaved && documentId) {
+      console.log(`保存文档标题: ${documentTitle}`);
+      
+      try {
+        // 使用当前标题或默认值
+        const savedTitle = documentTitle.trim() || '无标题文档';
+        
+        // 更新URL显示标题
+        const url = new URL(window.location.href);
+        url.searchParams.set('title', encodeURIComponent(savedTitle));
+        window.history.replaceState({}, '', url);
+        
+        // 保存成功后更新状态
+        setIsTitleSaved(true);
+        setTitleLastSaved(savedTitle);
+        
+        // 确保视图中的标题与保存的一致
+        if (savedTitle !== documentTitle) {
+          setDocumentTitle(savedTitle);
+        }
+      } catch (error) {
+        console.error('保存标题失败', error);
+        // 可以添加错误提示
+      }
+    }
+  }, [documentId, documentTitle, isTitleSaved]);
+  
+  // 按下回车键时保存标题
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveDocumentTitle();
+      (e.target as HTMLInputElement).blur();
+    }
   };
   
   // 处理复制文档ID
@@ -358,6 +386,122 @@ export default function EditorPage() {
     );
   };
 
+  // 在组件顶部附近添加一个useEffect用于加载初始标题
+  useEffect(() => {
+    if (isEditorReady && documentId) {
+      // 从URL中获取标题参数
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlTitle = urlParams.get('title');
+      
+      if (urlTitle) {
+        try {
+          const decodedTitle = decodeURIComponent(urlTitle);
+          setDocumentTitle(decodedTitle);
+          setTitleLastSaved(decodedTitle);
+        } catch (e) {
+          console.error('标题解码错误', e);
+        }
+      }
+      
+      // 这里也可以从服务器获取标题
+      // fetchDocumentTitle(documentId).then(title => {
+      //   if (title) {
+      //     setDocumentTitle(title);
+      //     setTitleLastSaved(title);
+      //   }
+      // });
+    }
+  }, [isEditorReady, documentId]);
+
+  // 优化活跃用户状态更新，防止闪烁
+  const handleActiveUsersChange = useCallback((users: Array<{name: string, color: string}>) => {
+    // 使用函数式更新，并只在用户列表真正变化时才更新
+    setActiveUsers(prevUsers => {
+      // 如果长度不同，肯定需要更新
+      if (prevUsers.length !== users.length) {
+        return users;
+      }
+      
+      // 检查是否有用户变化
+      const hasChanged = users.some((user, index) => {
+        return index >= prevUsers.length || 
+               user.name !== prevUsers[index]?.name || 
+               user.color !== prevUsers[index]?.color;
+      });
+      
+      return hasChanged ? users : prevUsers;
+    });
+  }, []);
+  
+  // 使用useRef和useCallback实现简单的防抖
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const debouncedHandleActiveUsersChange = useCallback((users: Array<{name: string, color: string}>) => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    
+    timerRef.current = setTimeout(() => {
+      handleActiveUsersChange(users);
+      timerRef.current = null;
+    }, 500);
+  }, [handleActiveUsersChange]);
+
+  // 初始化
+  useEffect(() => {
+    // 生成随机用户名
+    const randomName = '用户_' + Math.floor(Math.random() * 1000);
+    setUsername(randomName);
+    
+    // 检查URL中是否有文档ID参数
+    const urlParams = new URLSearchParams(window.location.search);
+    const docId = urlParams.get('id');
+    if (docId) {
+      setDocumentId(docId);
+      setIsEditorReady(true);
+    }
+  }, []);
+
+  // 处理文档ID输入变化
+  const handleDocumentIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDocumentId(e.target.value);
+  };
+
+  // 处理加入文档
+  const handleJoinDocument = () => {
+    if (!documentId.trim()) {
+      // 如果没有提供ID，自动生成一个
+      const newDocId = 'doc_' + Date.now();
+      setDocumentId(newDocId);
+      updateUrlWithDocId(newDocId);
+    } else {
+      // 更新URL以包含文档ID参数
+      updateUrlWithDocId(documentId);
+    }
+    setIsEditorReady(true);
+  };
+
+  // 处理创建新文档
+  const handleCreateDocument = () => {
+    const newDocId = 'doc_' + Date.now();
+    setDocumentId(newDocId);
+    setIsEditorReady(true);
+    // 更新URL以包含文档ID参数
+    updateUrlWithDocId(newDocId);
+  };
+
+  // 更新URL以包含文档ID参数
+  const updateUrlWithDocId = (docId: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('id', docId);
+    window.history.pushState({}, '', url);
+  };
+
+  // 处理用户名输入变化
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUsername(e.target.value);
+  };
+
   return (
     <div className={styles.container}>
       {/* 顶部导航栏 */}
@@ -376,14 +520,21 @@ export default function EditorPage() {
             </Link>
 
             {isEditorReady && (
-              <input 
-                type="text" 
-                value={documentTitle} 
-                onChange={handleTitleChange}
-                placeholder="无标题文档"
-                className={styles.documentTitleHeader}
-                aria-label="文档标题"
-              />
+              <div className={styles.documentTitleContainer}>
+                <input 
+                  type="text" 
+                  value={documentTitle} 
+                  onChange={handleTitleChange}
+                  onBlur={handleTitleBlur}
+                  onKeyDown={handleTitleKeyDown}
+                  placeholder="无标题文档"
+                  className={`${styles.documentTitleHeader} ${!isTitleSaved ? styles.unsaved : ''}`}
+                  aria-label="文档标题"
+                />
+                {!isTitleSaved && (
+                  <span className={styles.savingIndicator}>未保存</span>
+                )}
+              </div>
             )}
           </div>
           
@@ -424,17 +575,32 @@ export default function EditorPage() {
                 </button>
               </div>
 
-              {/* 活跃用户头像区域 */}
+              {/* 活跃用户头像区域 - 优化减少闪烁 */}
               <div className={styles.activeUsers}>
                 {activeUsers.length > 0 && (
                   <div className={styles.userAvatars}>
                     {activeUsers.slice(0, 3).map((user, index) => (
-                      <div key={index} className={styles.userAvatar} style={{ backgroundColor: user.color }}>
+                      <div 
+                        key={`${user.name}-${index}`} 
+                        className={styles.userAvatar} 
+                        style={{ 
+                          backgroundColor: user.color,
+                          transition: 'all 0.3s ease-in-out'
+                        }}
+                        title={user.name}
+                      >
                         {user.name[0]}
                       </div>
                     ))}
                     {activeUsers.length > 3 && (
-                      <div className={styles.userAvatar} style={{ backgroundColor: 'var(--bg-hover)' }}>
+                      <div 
+                        className={styles.userAvatar} 
+                        style={{ 
+                          backgroundColor: 'var(--bg-hover)',
+                          transition: 'all 0.3s ease-in-out'
+                        }}
+                        title={`还有 ${activeUsers.length - 3} 位用户`}
+                      >
                         +{activeUsers.length - 3}
                       </div>
                     )}
@@ -711,7 +877,7 @@ export default function EditorPage() {
                   documentId={documentId} 
                   username={username} 
                   ref={editorRef} 
-                  onActiveUsersChange={handleActiveUsersChange}
+                  onActiveUsersChange={debouncedHandleActiveUsersChange}
                 />
               </div>
             </div>

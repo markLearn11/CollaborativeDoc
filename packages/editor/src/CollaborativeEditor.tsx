@@ -63,8 +63,13 @@ export const CollaborativeEditor = forwardRef<CollaborativeEditorRef, Collaborat
   const providerRef = useRef<WebsocketProvider | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [activeUsers, setActiveUsers] = useState<Array<{name: string, color: string}>>([]);
+  // 添加一个ref来跟踪组件是否已卸载
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    // 组件挂载时设置为true
+    isMountedRef.current = true;
+
     // 清理之前的provider
     if (providerRef.current) {
       providerRef.current.disconnect();
@@ -111,10 +116,16 @@ export const CollaborativeEditor = forwardRef<CollaborativeEditorRef, Collaborat
     // 使用简单的布尔状态表示连接状态，避免存储复杂对象
     setIsConnected(true);
 
+    // 组件卸载时的清理函数
     return () => {
-      websocketProvider.disconnect();
-      providerRef.current = null;
-      setIsConnected(false);
+      // 使用ref标记组件已卸载，而不是直接设置状态
+      isMountedRef.current = false;
+      
+      if (providerRef.current) {
+        const websocketProvider = providerRef.current;
+        websocketProvider.disconnect();
+        providerRef.current = null;
+      }
     };
   }, [documentId, username, userColor, websocketUrl, onActiveUsersChange]);
 
