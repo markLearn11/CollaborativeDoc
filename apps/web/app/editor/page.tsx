@@ -155,6 +155,70 @@ export default function EditorPage() {
     }
   }, []);
 
+  // 在组件顶部附近添加一个useEffect用于加载初始标题
+  useEffect(() => {
+    if (isEditorReady && documentId) {
+      // 1. 首先尝试从URL中获取标题参数
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlTitle = urlParams.get('title');
+      
+      if (urlTitle) {
+        try {
+          // 确保使用decodeURIComponent正确解码标题
+          const decodedTitle = decodeURIComponent(urlTitle);
+          setDocumentTitle(decodedTitle);
+          setTitleLastSaved(decodedTitle);
+          // 更新浏览器标题
+          document.title = `${decodedTitle} - 协同文档`;
+          
+          // 同时更新localStorage缓存
+          try {
+            localStorage.setItem(`doc_title_${documentId}`, decodedTitle);
+          } catch (e) {
+            console.warn('保存标题到本地存储失败', e);
+          }
+          
+          return; // 已找到标题，不再继续查找
+        } catch (e) {
+          console.error('标题解码错误', e);
+        }
+      }
+      
+      // 2. 如果URL中没有标题，尝试从localStorage获取
+      try {
+        const cachedTitle = localStorage.getItem(`doc_title_${documentId}`);
+        if (cachedTitle) {
+          setDocumentTitle(cachedTitle);
+          setTitleLastSaved(cachedTitle);
+          document.title = `${cachedTitle} - 协同文档`;
+          
+          // 更新URL
+          const url = new URL(window.location.href);
+          url.searchParams.set('title', encodeURIComponent(cachedTitle));
+          window.history.replaceState({}, '', url);
+          
+          return; // 已找到标题，不再继续查找
+        }
+      } catch (e) {
+        console.warn('从本地存储获取标题失败', e);
+      }
+      
+      // 3. 最后可以从服务器API获取标题
+      // 这里可以添加API调用逻辑
+      // fetchDocumentTitle(documentId).then(title => {
+      //   if (title) {
+      //     setDocumentTitle(title);
+      //     setTitleLastSaved(title);
+      //     document.title = `${title} - 协同文档`;
+      //   }
+      // });
+      
+      // 4. 如果以上都失败，使用默认标题
+      // setDocumentTitle('无标题文档');
+      // setTitleLastSaved('无标题文档');
+    }
+  }, [isEditorReady, documentId]);
+
   // 改进处理文档标题输入变化的函数，允许完全删除标题
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     // 直接使用用户输入值，不在此处应用默认值
@@ -187,10 +251,17 @@ export default function EditorPage() {
         // 使用当前标题或默认值
         const savedTitle = documentTitle.trim() || '无标题文档';
         
-        // 更新URL显示标题
+        // 更新URL显示标题 - 确保正确编码
         const url = new URL(window.location.href);
         url.searchParams.set('title', encodeURIComponent(savedTitle));
         window.history.replaceState({}, '', url);
+        
+        // 保存标题到localStorage，便于下次访问时获取
+        try {
+          localStorage.setItem(`doc_title_${documentId}`, savedTitle);
+        } catch (e) {
+          console.warn('保存标题到本地存储失败', e);
+        }
         
         // 保存成功后更新状态
         setIsTitleSaved(true);
@@ -200,6 +271,9 @@ export default function EditorPage() {
         if (savedTitle !== documentTitle) {
           setDocumentTitle(savedTitle);
         }
+        
+        // 更新页面标题
+        document.title = `${savedTitle} - 协同文档`;
       } catch (error) {
         console.error('保存标题失败', error);
         // 可以添加错误提示
@@ -218,7 +292,13 @@ export default function EditorPage() {
   
   // 处理复制文档ID
   const handleCopyDocId = () => {
-    navigator.clipboard.writeText(documentId);
+    // 创建包含文档ID和最新标题的完整URL
+    const url = new URL(window.location.href);
+    url.searchParams.set('id', documentId);
+    url.searchParams.set('title', encodeURIComponent(documentTitle));
+    
+    // 复制完整URL到剪贴板
+    navigator.clipboard.writeText(url.toString());
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
@@ -386,33 +466,6 @@ export default function EditorPage() {
     );
   };
 
-  // 在组件顶部附近添加一个useEffect用于加载初始标题
-  useEffect(() => {
-    if (isEditorReady && documentId) {
-      // 从URL中获取标题参数
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlTitle = urlParams.get('title');
-      
-      if (urlTitle) {
-        try {
-          const decodedTitle = decodeURIComponent(urlTitle);
-          setDocumentTitle(decodedTitle);
-          setTitleLastSaved(decodedTitle);
-        } catch (e) {
-          console.error('标题解码错误', e);
-        }
-      }
-      
-      // 这里也可以从服务器获取标题
-      // fetchDocumentTitle(documentId).then(title => {
-      //   if (title) {
-      //     setDocumentTitle(title);
-      //     setTitleLastSaved(title);
-      //   }
-      // });
-    }
-  }, [isEditorReady, documentId]);
-
   // 优化活跃用户状态更新，防止闪烁
   const handleActiveUsersChange = useCallback((users: Array<{name: string, color: string}>) => {
     // 使用函数式更新，并只在用户列表真正变化时才更新
@@ -447,20 +500,10 @@ export default function EditorPage() {
     }, 500);
   }, [handleActiveUsersChange]);
 
-  // 初始化
-  useEffect(() => {
-    // 生成随机用户名
-    const randomName = '用户_' + Math.floor(Math.random() * 1000);
-    setUsername(randomName);
-    
-    // 检查URL中是否有文档ID参数
-    const urlParams = new URLSearchParams(window.location.search);
-    const docId = urlParams.get('id');
-    if (docId) {
-      setDocumentId(docId);
-      setIsEditorReady(true);
-    }
-  }, []);
+  // 处理用户名输入变化
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUsername(e.target.value);
+  };
 
   // 处理文档ID输入变化
   const handleDocumentIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -477,6 +520,29 @@ export default function EditorPage() {
     } else {
       // 更新URL以包含文档ID参数
       updateUrlWithDocId(documentId);
+      
+      // 尝试通过API或者localStorage获取该文档的标题
+      // 这里模拟从服务务器获取标题，实际项目中可以替换为API调用
+      try {
+        // 先查询localStorage中是否有此文档的标题缓存
+        const cachedTitle = localStorage.getItem(`doc_title_${documentId}`);
+        
+        if (cachedTitle) {
+          setDocumentTitle(cachedTitle);
+          setTitleLastSaved(cachedTitle);
+          document.title = `${cachedTitle} - 协同文档`;
+        } else {
+          // 如果没有缓存，可以在此处调用API获取文档标题
+          // fetchDocumentTitle(documentId).then(...)
+          
+          // 设置默认标题
+          setDocumentTitle('无标题文档');
+          setTitleLastSaved('无标题文档');
+        }
+      } catch (error) {
+        console.error('获取文档标题失败', error);
+        setDocumentTitle('无标题文档');
+      }
     }
     setIsEditorReady(true);
   };
@@ -490,16 +556,17 @@ export default function EditorPage() {
     updateUrlWithDocId(newDocId);
   };
 
-  // 更新URL以包含文档ID参数
+  // 更新URL以包含文档ID和标题参数
   const updateUrlWithDocId = (docId: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set('id', docId);
+    
+    // 如果有标题，也一并更新到URL
+    if (documentTitle && documentTitle.trim() !== '') {
+      url.searchParams.set('title', encodeURIComponent(documentTitle));
+    }
+    
     window.history.pushState({}, '', url);
-  };
-
-  // 处理用户名输入变化
-  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setUsername(e.target.value);
   };
 
   return (

@@ -65,68 +65,96 @@ export const CollaborativeEditor = forwardRef<CollaborativeEditorRef, Collaborat
   const [activeUsers, setActiveUsers] = useState<Array<{name: string, color: string}>>([]);
   // 添加一个ref来跟踪组件是否已卸载
   const isMountedRef = useRef(true);
+  // 添加一个防抖标志
+  const isUpdatingRef = useRef(false);
+
+  // 辅助函数：生成随机颜色
+  const getRandomColor = () => {
+    const colors = [
+      '#25C2A0', '#5A67D8', '#F97316', '#6366F1', '#EC4899',
+      '#8B5CF6', '#EF4444', '#14B8A6', '#06B6D4', '#0EA5E9'
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
 
   useEffect(() => {
     // 组件挂载时设置为true
     isMountedRef.current = true;
-
+    
     // 清理之前的provider
     if (providerRef.current) {
       providerRef.current.disconnect();
+      providerRef.current = null;
     }
-
-    // 连接到WebSocket服务器
-    const websocketProvider = new WebsocketProvider(
-      websocketUrl,
-      documentId,
-      ydocRef.current
-    );
-
-    // 设置用户信息
-    websocketProvider.awareness.setLocalStateField('user', {
-      name: username,
-      color: userColor,
-    });
-
-    // 监听其他用户的状态变化
-    websocketProvider.awareness.on('change', () => {
-      const states = websocketProvider.awareness.getStates();
-      const users: Array<{name: string, color: string}> = [];
+    
+    try {
+      // 创建新的WebSocket连接
+      const provider = new WebsocketProvider(websocketUrl, documentId, ydocRef.current);
+      providerRef.current = provider;
       
-      states.forEach((state: any) => {
-        if (state.user) {
-          users.push({
-            name: state.user.name,
-            color: state.user.color,
-          });
-        }
+      // 设置本地用户信息
+      provider.awareness.setLocalStateField('user', {
+        name: username,
+        color: userColor || getRandomColor(),
       });
       
-      setActiveUsers(users);
+      // 监听awareness变化
+      const handleAwarenessUpdate = () => {
+        if (isUpdatingRef.current || !isMountedRef.current) return;
+        
+        isUpdatingRef.current = true;
+        
+        // 收集用户信息
+        const states = provider.awareness.getStates();
+        const users: Array<{name: string, color: string}> = [];
+        
+        states.forEach((state: any) => {
+          if (state.user && state.user.name) {
+            users.push({
+              name: state.user.name,
+              color: state.user.color || '#e9ecef',
+            });
+          }
+        });
+        
+        // 使用setTimeout将状态更新推迟到下一个事件循环，避免无限更新
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setActiveUsers(users);
+            
+            if (onActiveUsersChange) {
+              onActiveUsersChange(users);
+            }
+          }
+          isUpdatingRef.current = false;
+        }, 0);
+      };
       
-      // 如果提供了回调函数，则通知父组件活跃用户状态更改
-      if (onActiveUsersChange) {
-        onActiveUsersChange(users);
-      }
-    });
-
-    // 使用ref存储provider，而不是state
-    providerRef.current = websocketProvider;
-    
-    // 使用简单的布尔状态表示连接状态，避免存储复杂对象
-    setIsConnected(true);
-
-    // 组件卸载时的清理函数
-    return () => {
-      // 使用ref标记组件已卸载，而不是直接设置状态
-      isMountedRef.current = false;
+      provider.awareness.on('change', handleAwarenessUpdate);
       
-      if (providerRef.current) {
-        const websocketProvider = providerRef.current;
-        websocketProvider.disconnect();
-        providerRef.current = null;
-      }
-    };
+      // 更新连接状态
+      setIsConnected(true);
+      
+      // 组件卸载时的清理函数
+      return () => {
+        // 使用ref标记组件已卸载，而不是直接设置状态
+        isMountedRef.current = false;
+        
+        if (providerRef.current) {
+          // 移除事件监听器
+          providerRef.current.awareness.off('change', handleAwarenessUpdate);
+          
+          const websocketProvider = providerRef.current;
+          websocketProvider.disconnect();
+          providerRef.current = null;
+        }
+      };
+    } catch (error) {
+      console.error('连接到协作服务器时出错:', error);
+      return () => {
+        isMountedRef.current = false;
+      };
+    }
   }, [documentId, username, userColor, websocketUrl, onActiveUsersChange]);
 
   const editor = useEditor(
